@@ -65,7 +65,11 @@ void LFCDLaser::poll(sensor_msgs::LaserScan::Ptr scan)
 
   while (!shutting_down_ && !got_scan)
   {
-    // Wait until first data sync of frame: 0xFA, 0xA0
+    // Read just 1 byte and store it in raw_bytes.
+    // The byte stored in index 0 here will be 0xFA,
+    // The byte stored in index 1 will be 0xA0.
+    // When both of those are filled we know that's the start
+    // of a frame.
     boost::asio::read(serial_, boost::asio::buffer(&raw_bytes[start_count],1));
 
     if(start_count == 0)
@@ -75,7 +79,7 @@ void LFCDLaser::poll(sensor_msgs::LaserScan::Ptr scan)
         start_count = 1;
       }
     }
-    else if(start_count == 1)
+    else if (start_count == 1)
     {
       if(raw_bytes[start_count] == 0xA0)
       {
@@ -94,16 +98,18 @@ void LFCDLaser::poll(sensor_msgs::LaserScan::Ptr scan)
         scan->ranges.resize(360);
         scan->intensities.resize(360);
 
-        //read data in sets of 6
-        for(uint16_t i = 0; i < raw_bytes.size(); i=i+42)
+        // Read 42 byte chunks at a time.
+        for(uint16_t i = 0; i < raw_bytes.size(); i = i + 42)
         {
-          if(raw_bytes[i] == 0xFA && raw_bytes[i+1] == (0xA0 + i / 42)) //&& CRC check
+          uint8_t angle_index = raw_bytes[i+1];
+          if(raw_bytes[i] == 0xFA && angle_index == (0xA0 + i / 42)) // && CRC check
           {
             good_sets++;
-            motor_speed += (raw_bytes[i+3] << 8) + raw_bytes[i+2]; //accumulate count for avg. time increment
-            rpms=(raw_bytes[i+3]<<8|raw_bytes[i+2])/10;
+            motor_speed += (raw_bytes[i+3] << 8) + raw_bytes[i+2]; // accumulate count for avg. time increment
+            rpms = (raw_bytes[i+3] << 8|raw_bytes[i+2]) / 10;
 
-            for(uint16_t j = i+4; j < i+40; j=j+6)
+            // Iterate in chunks of 6 bytes, each byte represents a different angle.
+            for(uint16_t j = i + 4; j < i + 40; j = j + 6)
             {
               index = 6*(i/42) + (j-4-i)/6;
 
@@ -115,21 +121,19 @@ void LFCDLaser::poll(sensor_msgs::LaserScan::Ptr scan)
 
               // Remaining bits are the range in mm
               uint16_t intensity = (byte1 << 8) + byte0;
-
-              // Last two bytes represent the uncertanty or intensity, might also be pixel area of target...
-              // uint16_t intensity = (byte3 << 8) + byte2;
               uint16_t range = (byte3 << 8) + byte2;
 
-              scan->ranges[359-index] = range / 1000.0;
-              scan->intensities[359-index] = intensity;
+              scan->ranges[359 - index] = range / 1000.0;
+              scan->intensities[359 - index] = intensity;
             }
           }
         }
 
-        scan->time_increment = motor_speed/good_sets/1e8;
+        scan->time_increment = motor_speed / good_sets / 1e8;
       }
       else
       {
+        // We didn't see the start of any frame so just reset to 0.
         start_count = 0;
       }
     }
@@ -141,7 +145,7 @@ int main(int argc, char **argv)
 {
   ros::init(argc, argv, "hlds_laser_publisher");
   ros::NodeHandle n;
-  ros::NodeHandle priv_nh("~");
+  ros::NodeHandle priv_nh("~"); // private namespace
 
   std::string port;
   int baud_rate;
@@ -171,6 +175,7 @@ int main(int argc, char **argv)
       laser_pub.publish(scan);
       motor_pub.publish(rpms);
     }
+
     laser.close();
 
     return 0;
