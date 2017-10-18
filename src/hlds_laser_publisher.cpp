@@ -39,10 +39,10 @@
 
 namespace hls_lfcd_lds
 {
-LFCDLaser::LFCDLaser(const std::string& port, uint32_t baud_rate, boost::asio::io_service& io)
+  LFCDLaser::LFCDLaser(const std::string& port, uint32_t baud_rate, boost::asio::io_service& io)
   : port_(port), baud_rate_(baud_rate), shutting_down_(false), serial_(io, port_)
-{
-  serial_.set_option(boost::asio::serial_port_base::baud_rate(baud_rate_));
+  {
+    serial_.set_option(boost::asio::serial_port_base::baud_rate(baud_rate_));
 
   // Below command is not required after firmware upgrade (2017.10)
   boost::asio::write(serial_, boost::asio::buffer("b", 1));  // start motor
